@@ -146,7 +146,9 @@ const CFG = {
       {k:"cantidad",l:"Unidades compradas (ajuste: negativo si resta)",t:"number",req:1},{k:"precio_total",l:"Precio total pagado",t:"number"},
       {k:"fecha_vencimiento",l:"Fecha de vencimiento",t:"date"}],
     hint:{total:"precio_total",unidades:"cantidad",texto:"Precio unitario"},
-    filtros:[{k:"categoria",l:"Categoría"},{k:"producto",l:"Producto"},{k:"proveedor",l:"Proveedor"},{k:"tipo",l:"Tipo"},{k:"fecha",l:"Mes",mes:1}],
+    rango:1,
+    filtros:[{k:"categoria",l:"Categoría"},{k:"producto",l:"Producto"},{k:"proveedor",l:"Proveedor"},{k:"tipo",l:"Tipo"},
+      {l:"Stock del producto",fn:[["Con stock (1 o más)",r=>r.stock>0],["Poco stock (menos de 5)",r=>r.stock>0&&r.stock<5],["Agotado (0)",r=>r.stock<=0]]},{k:"fecha",l:"Mes",mes:1}],
     orden:[["Más recientes","fecha","d",-1],["Más antiguos","fecha","d"],["Producto (A-Z)","producto","t"],["Vence primero","fecha_vencimiento","d"]]},
   ventas:{nombre:"Ventas",sub:"Lista básica: haz clic en «Ver» para la venta completa. Eliges el lote (solo salen los que tienen unidades) y escribes el precio de venta al público. Ganancia = total vendido − total del costo del lote elegido, y % sobre el costo. Al registrar la venta, el precio y el costo quedan fijos. Hora de Colombia",tabla:"ventas",
     aviso:"Los productos vuelven al stock y se quita su ingreso en caja.",
@@ -344,9 +346,12 @@ async function vistaLista(id) {
     filas = filas.map(v => ({...v, productos: (pl[v.id] || []).join("\n")}));
   }
   const listas = Object.fromEntries(fuentes.map((f, i) => [f, ls[i]]));
-  if (id === "inventario") {   // la categoría de cada movimiento es la de su producto
-    const cat = Object.fromEntries((listas.productos || []).map(p => [p.id, p.categoria]));
-    filas = filas.map(r => ({...r, categoria: cat[r.producto_id] ?? null}));
+  if (id === "inventario") {   // categoría y stock salen del producto; lo que queda y su valor, del lote de cada compra
+    const pr = Object.fromEntries((listas.productos || []).map(p => [p.id, p]));
+    const resta = Object.fromEntries((listas.lotes_stock || []).map(l => [l.id, Number(l.restante)]));
+    filas = filas.map(r => { const p = pr[r.producto_id] || {}, q = resta[r.id] || 0;
+      return {...r, categoria: p.categoria ?? null, stock: Number(p.stock ?? 0), restante: q,
+              valor_restante: q * Number(r.costo_unitario || 0), valor_venta: q * Number(p.precio_venta || 0)}; });
   }
   VIS = {id, m, filas, l2, movs, edit: null, listas};
   return encabezado(m.nombre, m.sub) +
@@ -522,7 +527,7 @@ function barraHTML() {
     opcionesFiltro(f).map(o => `<option value="${esc(o[0])}" ${String(e.f[i] ?? "") === String(o[0]) ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select></label>`).join("");
   return `<div class="bar"><label>Buscar<input value="${esc(e.q)}" oninput="setQ(this.value)" placeholder="Escribe para buscar…"></label>${fil}${rango}
     <label>Ordenar por<select onchange="setOrden(this.value)">${m.orden.map((o, i) => `<option value="${i}" ${e.o === i ? "selected" : ""}>${o[0]}</option>`).join("")}</select></label>
-    <button type="button" class="gris" onclick="limpiar()">Limpiar</button>${m.rango ? `<button type="button" onclick="exportarVentas()" title="Descarga en CSV las ventas que ves en la lista">⬇ Exportar CSV</button>` : ""}</div>`;
+    <button type="button" class="gris" onclick="limpiar()">Limpiar</button>${id === "ventas" ? `<button type="button" onclick="exportarVentas()" title="Descarga en CSV las ventas que ves en la lista">⬇ Exportar CSV</button>` : ""}</div>`;
 }
 function visibles() {
   const {id, m, filas} = VIS, e = E(id), q = e.q.trim().toLowerCase();
@@ -545,7 +550,7 @@ function listaHTML() {
   const {m, filas} = VIS, r = visibles();
   const acc = x => (m.puede && !m.puede(x)) ? `<span class="subt">Automático</span>` :
     `${m.ver ? `<button class="mini gris" onclick="${m.ver}(${x.id})">Ver</button> ` : ""}<button class="mini" onclick="editar(${x.id})">Editar</button> <button class="mini peligro" onclick="eliminar(${x.id})">Eliminar</button>`;
-  return `<p class="subt">Mostrando ${r.length} de ${filas.length} registros</p>${tablaScroll(m.cols, r, acc)}${m.rango ? pieVentas(r) : ""}`;
+  return `<p class="subt">Mostrando ${r.length} de ${filas.length} registros</p>${tablaScroll(m.cols, r, acc)}${m.rango ? (VIS.id === "inventario" ? pieInventario(r) : pieVentas(r)) : ""}`;
 }
 function lista2HTML() {
   const {m, l2} = VIS; if (!m.lista2 || m.lista2.oculta) return "";
@@ -589,6 +594,68 @@ function exportarVentas() {
   a.download = `ventas_${nombre}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+
+/* ---------- Inventario: total al pie y resumen (mini dashboard) de los movimientos que se ven ---------- */
+function pieInventario(r) {
+  const e = E(VIS.id), per = textoPeriodo(e);
+  const queda = suma(r, x => x.valor_restante), invertido = suma(r.filter(x => x.tipo === "Compra"), x => x.precio_total);
+  const titulo = !hayFiltro(e) ? "Todo el inventario" : per ? `Inventario · ${per}` : "Inventario filtrado";
+  const b = v => `<button type="button" class="enlace" title="Ver el resumen detallado" onclick="resumenInventario()">${money(v)}</button>`;
+  return `<div class="pie-total"><span>${titulo} <small>(${r.length} ${r.length === 1 ? "movimiento" : "movimientos"})</small></span>
+    <span>En stock, a precio de compra: ${b(queda)} &nbsp;·&nbsp; Invertido en compras: ${b(invertido)} <small>← clic para ver el resumen</small></span></div>`;
+}
+function resumenInventario() {
+  const r = visibles(), e = E(VIS.id), per = textoPeriodo(e);
+  const sub = (per ? per + " · " : hayFiltro(e) ? "Movimientos filtrados · " : "Todo el inventario · ") + `${r.length} ${r.length === 1 ? "movimiento" : "movimientos"}`;
+  if (!r.length) return abrirModal(cabModal("Resumen de inventario", sub) + `<p class="vacio">No hay movimientos con este filtro.</p>` + pieModal);
+
+  const compras = r.filter(x => x.tipo === "Compra"), ajustes = r.filter(x => x.tipo === "Ajuste");
+  const invertido = suma(compras, x => x.precio_total), uCompradas = suma(compras, x => x.cantidad);
+  const queda = suma(r, x => x.valor_restante), uQueda = suma(r, x => x.restante), vVenta = suma(r, x => x.valor_venta);
+  const sumas = suma(ajustes.filter(x => Number(x.cantidad) > 0), x => x.cantidad), restas = -suma(ajustes.filter(x => Number(x.cantidad) < 0), x => x.cantidad);
+  const mayor = [...compras].sort((a, b) => Number(b.precio_total) - Number(a.precio_total))[0];
+
+  // Productos distintos y su stock actual
+  const prods = new Map(); r.forEach(x => { if (!prods.has(x.producto_id)) prods.set(x.producto_id, Number(x.stock)); });
+  const stocks = [...prods.values()], conStock = stocks.filter(n => n > 0).length, poco = stocks.filter(n => n > 0 && n < 5).length, agotados = stocks.filter(n => n <= 0).length;
+
+  // Vencimientos de lo que aún queda
+  const hoy = diaCO(new Date()), dias = f => Math.round((new Date(f + "T00:00:00Z") - new Date(hoy + "T00:00:00Z")) / 864e5);
+  const conVence = r.filter(x => x.fecha_vencimiento && x.restante > 0);
+  const uVencidas = suma(conVence.filter(x => dias(x.fecha_vencimiento) < 0), x => x.restante);
+  const uPorVencer = suma(conVence.filter(x => { const d = dias(x.fecha_vencimiento); return d >= 0 && d <= 5; }), x => x.restante);
+
+  // Agrupaciones de las compras
+  const porDia = new Map(), porProd = new Map(), porProv = new Map(), porCat = new Map();
+  r.forEach(x => { const p = porProd.get(x.producto_id) || {producto: x.producto, unidades: 0, invertido: 0, queda: 0}; p.queda += x.valor_restante; porProd.set(x.producto_id, p); });
+  compras.forEach(x => {
+    const k = diaCO(x.fecha), t = Number(x.precio_total); porDia.set(k, (porDia.get(k) || 0) + t);
+    const p = porProd.get(x.producto_id); p.unidades += Number(x.cantidad); p.invertido += t;
+    const v = x.proveedor || "Sin proveedor", a = porProv.get(v) || {proveedor: v, compras: 0, invertido: 0}; a.compras++; a.invertido += t; porProv.set(v, a);
+    const c = x.categoria || "Sin categoría"; porCat.set(c, (porCat.get(c) || 0) + t);
+  });
+  const porMes = porDia.size > 31, graf = new Map();
+  porDia.forEach((t, k) => { const g = porMes ? k.slice(0, 7) : k; graf.set(g, (graf.get(g) || 0) + t); });
+  const filasGraf = [...graf].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([k, t]) => [porMes ? nombreMes(k) : soloFecha(k).slice(0, 5), t]);
+  const filasCat = [...porCat].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const topProd = [...porProd.values()].filter(p => p.invertido > 0).sort((a, b) => b.invertido - a.invertido).slice(0, 5);
+  const topProv = [...porProv.values()].sort((a, b) => b.invertido - a.invertido).slice(0, 5);
+
+  abrirModal(cabModal("Resumen de inventario", sub) +
+    seccionHTML("Valor de lo que queda en stock", gridHTML([datoHTML("En stock, a precio de compra", money(queda)), datoHTML("En stock, a precio de venta", money(vVenta)),
+      datoHTML("Ganancia potencial", money(vVenta - queda)), datoHTML("Unidades en stock", uQueda)])) +
+    seccionHTML("Compras", gridHTML([datoHTML("Invertido en compras", money(invertido)), datoHTML("N° de compras", compras.length), datoHTML("Unidades compradas", uCompradas),
+      datoHTML("Costo promedio por unidad", uCompradas > 0 ? money(invertido / uCompradas) : "—"),
+      datoHTML("Compra más grande", mayor ? `${money(mayor.precio_total)} <small>(${esc(mayor.producto)})</small>` : "—")])) +
+    seccionHTML("Ajustes de stock", gridHTML([datoHTML("N° de ajustes", ajustes.length), datoHTML("Unidades que suman", sumas), datoHTML("Unidades que restan", restas)])) +
+    seccionHTML("Productos (según su stock actual)", gridHTML([datoHTML("Productos distintos", prods.size), datoHTML("Con stock", conStock),
+      datoHTML("Poco stock (menos de 5)", poco), datoHTML("Agotados", agotados)])) +
+    seccionHTML("Vencimientos de lo que queda", gridHTML([datoHTML("Unidades ya vencidas", uVencidas), datoHTML("Unidades que vencen en 5 días o menos", uPorVencer)])) +
+    (filasGraf.length > 1 ? seccionHTML(porMes ? "Invertido por mes" : "Invertido por día", barras(filasGraf)) : "") +
+    (filasCat.length > 1 ? seccionHTML("Invertido por categoría", barras(filasCat)) : "") +
+    `<div class="cols2"><div>${seccionHTML("Productos en los que más invertiste", topProd.length ? `<div class="tabla">${tablaHTML([["producto", "Producto"], ["unidades", "Unid. compradas"], ["invertido", "Invertido", "$"], ["queda", "En stock ($)", "$"]], topProd)}</div>` : `<p class="vacio">Sin compras en este filtro.</p>`)}</div>
+     <div>${seccionHTML("Proveedores", topProv.length ? `<div class="tabla">${tablaHTML([["proveedor", "Proveedor"], ["compras", "Compras"], ["invertido", "Invertido", "$"]], topProv)}</div>` : `<p class="vacio">Sin compras en este filtro.</p>`)}</div></div>` + pieModal);
 }
 function setRango(k, v) { E(VIS.id)[k] = v; pintarLista(); }
 function atajoRango(t) {
