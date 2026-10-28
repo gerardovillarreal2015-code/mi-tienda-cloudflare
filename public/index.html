@@ -72,6 +72,11 @@ button.enlace:hover{background:none;color:var(--accent)}
 .modal h4{margin:18px 0 6px;font-size:15px}
 .modal .tabla{overflow-x:auto}
 .modal .venta-det{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.pie-total{display:flex;justify-content:space-between;align-items:center;gap:8px 16px;flex-wrap:wrap;margin-top:12px;padding:12px 14px;background:#f3f6f5;border:1px solid var(--line);border-radius:8px}
+.pie-total .enlace{font-size:22px}
+.pie-total small{color:var(--muted);font-weight:400}
+.atajos{display:flex;gap:6px;align-items:flex-end}
+.modal .cols2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0 18px}
 @media(max-width:760px){body{flex-direction:column}aside{width:100%;height:auto;position:static;padding:12px}
 nav{display:flex;overflow-x:auto;gap:4px}nav a{white-space:nowrap;margin:0}aside h1{padding-bottom:10px}main{padding:18px}}
 </style>
@@ -145,7 +150,7 @@ const CFG = {
     orden:[["Más recientes","fecha","d",-1],["Más antiguos","fecha","d"],["Producto (A-Z)","producto","t"],["Vence primero","fecha_vencimiento","d"]]},
   ventas:{nombre:"Ventas",sub:"Lista básica: haz clic en «Ver» para la venta completa. Eliges el lote (solo salen los que tienen unidades) y escribes el precio de venta al público. Ganancia = total vendido − total del costo del lote elegido, y % sobre el costo. Al registrar la venta, el precio y el costo quedan fijos. Hora de Colombia",tabla:"ventas",
     aviso:"Los productos vuelven al stock y se quita su ingreso en caja.",
-    costos:1,
+    costos:1, rango:1,
     fuentes:["clientes","productos","lotes_stock"],ver:"verVenta",
     cols:[["id","N°","venta"],["fecha","Fecha y hora","f"],["cliente","Cliente"],["total","Total","$"],["debe","Debe","$"],["ganancia","Ganancia","gan"]],
     campos:[{k:"cliente_id",l:"Cliente que compra",t:"select",src:"clientes",ver:"nombre",auto:1},{k:"debe",l:"Debe (lo que queda fiado)",t:"number"}],
@@ -505,9 +510,12 @@ function opcionesFiltro(f) {
 }
 function barraHTML() {
   const {id, m} = VIS, e = E(id);
+  const rango = m.rango ? `<label>Desde<input type="date" value="${esc(e.desde || "")}" onchange="setRango('desde',this.value)"></label>
+    <label>Hasta<input type="date" value="${esc(e.hasta || "")}" onchange="setRango('hasta',this.value)"></label>
+    <span class="atajos"><button type="button" class="mini gris" onclick="atajoRango('hoy')">Hoy</button><button type="button" class="mini gris" onclick="atajoRango('7')">7 días</button><button type="button" class="mini gris" onclick="atajoRango('mes')">Este mes</button></span>` : "";
   const fil = (m.filtros || []).map((f, i) => `<label>${f.l}<select onchange="setFiltro(${i},this.value)"><option value="">Todos</option>${
     opcionesFiltro(f).map(o => `<option value="${esc(o[0])}" ${String(e.f[i] ?? "") === String(o[0]) ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select></label>`).join("");
-  return `<div class="bar"><label>Buscar<input value="${esc(e.q)}" oninput="setQ(this.value)" placeholder="Escribe para buscar…"></label>${fil}
+  return `<div class="bar"><label>Buscar<input value="${esc(e.q)}" oninput="setQ(this.value)" placeholder="Escribe para buscar…"></label>${fil}${rango}
     <label>Ordenar por<select onchange="setOrden(this.value)">${m.orden.map((o, i) => `<option value="${i}" ${e.o === i ? "selected" : ""}>${o[0]}</option>`).join("")}</select></label>
     <button type="button" class="gris" onclick="limpiar()">Limpiar</button></div>`;
 }
@@ -518,8 +526,10 @@ function visibles() {
       const v = e.f[i]; if (v === undefined || v === "") return true;
       return f.fn ? f.fn[Number(v)][1](x) : f.mes ? mesCO(x[f.k]) === v : String(x[f.k]) === v;
     }));
+  const [d1, d2] = rangoDe(e);
+  const r2 = m.rango && (d1 || d2) ? r.filter(x => { const d = diaCO(x.fecha); return (!d1 || d >= d1) && (!d2 || d <= d2); }) : r;
   const [, k, t, dir = 1] = m.orden[e.o];
-  return r.sort((a, b) => {
+  return r2.sort((a, b) => {
     const va = a[k], vb = b[k], na = va == null || va === "", nb = vb == null || vb === "";
     if (na || nb) return na === nb ? 0 : na ? 1 : -1;
     const d = t === "n" ? Number(va) - Number(vb) : t === "d" ? (va < vb ? -1 : va > vb ? 1 : 0) : String(va).localeCompare(String(vb), "es", {sensitivity: "base"});
@@ -530,7 +540,7 @@ function listaHTML() {
   const {m, filas} = VIS, r = visibles();
   const acc = x => (m.puede && !m.puede(x)) ? `<span class="subt">Automático</span>` :
     `${m.ver ? `<button class="mini gris" onclick="${m.ver}(${x.id})">Ver</button> ` : ""}<button class="mini" onclick="editar(${x.id})">Editar</button> <button class="mini peligro" onclick="eliminar(${x.id})">Eliminar</button>`;
-  return `<p class="subt">Mostrando ${r.length} de ${filas.length} registros</p>${tablaScroll(m.cols, r, acc)}`;
+  return `<p class="subt">Mostrando ${r.length} de ${filas.length} registros</p>${tablaScroll(m.cols, r, acc)}${m.rango ? pieVentas(r) : ""}`;
 }
 function lista2HTML() {
   const {m, l2} = VIS; if (!m.lista2 || m.lista2.oculta) return "";
@@ -542,6 +552,81 @@ const setQ = v => { E(VIS.id).q = v; pintarLista(); };
 const setFiltro = (i, v) => { E(VIS.id).f[i] = v; pintarLista(); };
 const setOrden = v => { E(VIS.id).o = Number(v); pintarLista(); };
 function limpiar() { EST[VIS.id] = {q: "", f: {}, o: 0}; document.getElementById("barra").innerHTML = barraHTML(); pintarLista(); }
+
+/* ---------- Ventas: rango de fechas, total al pie y resumen del periodo ---------- */
+const rangoDe = e => { const a = e.desde || "", b = e.hasta || ""; return a && b && a > b ? [b, a] : [a, b]; };   // si se escriben al revés, se corrigen
+const hayFiltro = e => !!(e.q.trim() || e.desde || e.hasta || Object.values(e.f).some(v => v !== undefined && v !== ""));
+const suma = (a, fn) => a.reduce((t, x) => t + (Number(fn(x)) || 0), 0);
+function setRango(k, v) { E(VIS.id)[k] = v; pintarLista(); }
+function atajoRango(t) {
+  const e = E(VIS.id), hoy = diaCO(new Date());
+  if (t === "hoy") { e.desde = hoy; e.hasta = hoy; }
+  else if (t === "7") { e.desde = diaCO(new Date(Date.now() - 6 * 864e5)); e.hasta = hoy; }
+  else { e.desde = hoy.slice(0, 8) + "01"; e.hasta = hoy; }
+  document.getElementById("barra").innerHTML = barraHTML();
+  pintarLista();
+}
+function textoPeriodo(e) {
+  const [a, b] = rangoDe(e);
+  return !a && !b ? "" : a && b ? (a === b ? soloFecha(a) : `${soloFecha(a)} al ${soloFecha(b)}`) : a ? `desde ${soloFecha(a)}` : `hasta ${soloFecha(b)}`;
+}
+function pieVentas(r) {
+  const e = E(VIS.id), total = suma(r, v => v.total), per = textoPeriodo(e);
+  const titulo = !hayFiltro(e) ? "Total de todas las ventas" : per ? `Total vendido · ${per}` : "Total de las ventas filtradas";
+  return `<div class="pie-total"><span>${titulo} <small>(${r.length} ${r.length === 1 ? "venta" : "ventas"})</small></span>
+    <span><button type="button" class="enlace" title="Ver el resumen detallado" onclick="resumenVentas()">${money(total)}</button> <small>← clic para ver el resumen</small></span></div>`;
+}
+const barras = (filas, fmt = money) => { const mx = Math.max(...filas.map(f => f[1]), 1);
+  return filas.map(f => `<div class="hb" style="grid-template-columns:minmax(90px,150px) 1fr 110px"><span>${esc(f[0])}</span><div class="hbar"><i style="width:${Math.max(2, Math.round(f[1] / mx * 100))}%"></i></div><span style="text-align:right">${fmt(f[1])}</span></div>`).join(""); };
+function resumenVentas() {
+  const r = visibles(), e = E(VIS.id), per = textoPeriodo(e);
+  const sub = (per ? per + " · " : hayFiltro(e) ? "Ventas filtradas · " : "Todas las ventas · ") + `${r.length} ${r.length === 1 ? "venta" : "ventas"}`;
+  if (!r.length) return abrirModal(cabModal("Resumen de ventas", sub) + `<p class="vacio">No hay ventas con este filtro.</p>` + pieModal);
+
+  const ids = new Set(r.map(v => v.id)), items = VIS.l2.filter(i => ids.has(i.venta_id));
+  const conDetalle = new Set(items.map(i => i.venta_id)), sinDetalle = r.filter(v => !conDetalle.has(v.id)).length;
+  const total = suma(r, v => v.total), fiado = suma(r, v => v.debe), cobrado = total - fiado;
+  const unidades = suma(items, i => i.cantidad), costo = suma(items, i => Number(i.cantidad) * i.costo_lote);
+  const ganancia = suma(items, i => i.ganancia), vendidoDetalle = suma(items, i => i.subtotal);
+
+  // Por día, por producto y por cliente
+  const dias = new Map(), prods = new Map(), clis = new Map();
+  r.forEach(v => {
+    const k = diaCO(v.fecha), d = dias.get(k) || {n: 0, t: 0}; d.n++; d.t += Number(v.total); dias.set(k, d);
+    const c = v.cliente || "Sin cliente (mostrador)", a = clis.get(c) || {cliente: c, ventas: 0, total: 0, debe: 0};
+    a.ventas++; a.total += Number(v.total); a.debe += Number(v.debe); clis.set(c, a);
+  });
+  items.forEach(i => { const a = prods.get(i.producto_id) || {producto: i.producto, unidades: 0, total: 0, ganancia: 0};
+    a.unidades += Number(i.cantidad); a.total += Number(i.subtotal); a.ganancia += i.ganancia; prods.set(i.producto_id, a); });
+  const listaProd = [...prods.values()], listaCli = [...clis.values()].sort((a, b) => b.total - a.total);
+  const mejorDia = [...dias].sort((a, b) => b[1].t - a[1].t)[0], mayor = [...r].sort((a, b) => Number(b.total) - Number(a.total))[0];
+  const estrella = [...listaProd].sort((a, b) => b.unidades - a.unidades)[0];
+  const deudaClientes = suma(VIS.listas.clientes || [], c => c.deuda);
+
+  // Gráfico: por día (hasta 31 días) o por mes
+  const porMes = dias.size > 31, graf = new Map();
+  [...dias].forEach(([k, d]) => { const g = porMes ? k.slice(0, 7) : k; graf.set(g, (graf.get(g) || 0) + d.t); });
+  const filasGraf = [...graf].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([k, t]) => [porMes ? nombreMes(k) : soloFecha(k).slice(0, 5), t]);
+
+  const pc = (a, b) => b > 0 ? pct(a / b * 100) : "—";
+  abrirModal(cabModal("Resumen de ventas", sub) +
+    (sinDetalle ? `<p class="subt">⚠ ${sinDetalle} ${sinDetalle === 1 ? "venta no tiene" : "ventas no tienen"} el detalle de productos guardado: no se cuentan en ganancia, unidades ni productos.</p>` : "") +
+    seccionHTML("Ventas", gridHTML([datoHTML("Total vendido", money(total)), datoHTML("N° de ventas", r.length), datoHTML("Venta promedio", money(total / r.length)),
+      datoHTML("Venta más grande", `${money(mayor.total)} <small>(N° ${mayor.id})</small>`)])) +
+    seccionHTML("Ganancia", gridHTML([datoHTML("Ganancia total", money(ganancia)), datoHTML("% de ganancia sobre el costo", pc(ganancia, costo)),
+      datoHTML("Margen sobre lo vendido", pc(ganancia, vendidoDetalle)), datoHTML("Costo de lo vendido", money(costo))])) +
+    seccionHTML("Cobros y deudas", gridHTML([datoHTML("Cobrado en las ventas", money(cobrado)), datoHTML("Quedó fiado en el periodo", money(fiado)),
+      datoHTML("% fiado del total", pc(fiado, total)), datoHTML("Ventas con deuda", r.filter(v => Number(v.debe) > 0).length),
+      datoHTML("Deuda actual de todos los clientes", money(deudaClientes))])) +
+    seccionHTML("Productos", gridHTML([datoHTML("Unidades vendidas", unidades), datoHTML("Productos distintos", prods.size),
+      datoHTML("Más vendido", estrella ? `${esc(estrella.producto)} <small>(${estrella.unidades} u.)</small>` : "—")])) +
+    seccionHTML("Días", gridHTML([datoHTML("Días con ventas", dias.size), datoHTML("Promedio por día con ventas", money(total / dias.size)),
+      datoHTML("Mejor día", `${soloFecha(mejorDia[0])} <small>(${money(mejorDia[1].t)})</small>`)])) +
+    (filasGraf.length > 1 ? seccionHTML(porMes ? "Ventas por mes" : "Ventas por día", barras(filasGraf)) : "") +
+    `<div class="cols2"><div>${seccionHTML("Productos que más dejaron", listaProd.length ? `<div class="tabla">${tablaHTML([["producto", "Producto"], ["unidades", "Unid."], ["total", "Vendido", "$"], ["ganancia", "Ganancia", "$"]],
+      [...listaProd].sort((a, b) => b.ganancia - a.ganancia).slice(0, 5))}</div>` : `<p class="vacio">Sin detalle de productos.</p>`)}</div>
+     <div>${seccionHTML("Clientes que más compraron", `<div class="tabla">${tablaHTML([["cliente", "Cliente"], ["ventas", "Ventas"], ["total", "Total", "$"], ["debe", "Debe", "$"]], listaCli.slice(0, 5))}</div>`)}</div></div>` + pieModal);
+}
 
 /* ---------- Ventana de detalle del cliente (deudas, productos y abonos) ---------- */
 function abrirModal(html) {
