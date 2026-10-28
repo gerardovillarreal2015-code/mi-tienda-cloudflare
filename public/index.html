@@ -150,9 +150,9 @@ const CFG = {
     orden:[["Más recientes","fecha","d",-1],["Más antiguos","fecha","d"],["Producto (A-Z)","producto","t"],["Vence primero","fecha_vencimiento","d"]]},
   ventas:{nombre:"Ventas",sub:"Lista básica: haz clic en «Ver» para la venta completa. Eliges el lote (solo salen los que tienen unidades) y escribes el precio de venta al público. Ganancia = total vendido − total del costo del lote elegido, y % sobre el costo. Al registrar la venta, el precio y el costo quedan fijos. Hora de Colombia",tabla:"ventas",
     aviso:"Los productos vuelven al stock y se quita su ingreso en caja.",
-    costos:1, rango:1,
+    costos:1, rango:1, buscar:["cliente"],
     fuentes:["clientes","productos","lotes_stock"],ver:"verVenta",
-    cols:[["id","N°","venta"],["fecha","Fecha y hora","f"],["cliente","Cliente"],["total","Total","$"],["debe","Debe","$"],["ganancia","Ganancia","gan"]],
+    cols:[["id","N°","venta"],["fecha","Fecha y hora","f"],["productos","Producto y cantidad","lin"],["total","Total","$"],["debe","Debe","$"],["ganancia","Ganancia","gan"]],
     campos:[{k:"cliente_id",l:"Cliente que compra",t:"select",src:"clientes",ver:"nombre",auto:1},{k:"debe",l:"Debe (lo que queda fiado)",t:"number"}],
     filtros:[{k:"cliente",l:"Cliente"},{l:"Pago",fn:[["Con deuda",r=>Number(r.debe)>0],["Pagadas",r=>Number(r.debe)===0]]},{k:"fecha",l:"Mes",mes:1}],
     orden:[["Más recientes","fecha","d",-1],["Más antiguas","fecha","d"],["Mayor total","total","n",-1],["Menor total","total","n"],["Mayor ganancia","ganancia","n",-1],["Cliente (A-Z)","cliente","t"]],
@@ -185,6 +185,7 @@ const celda = (v, t, r) => t === "$" ? money(v) : t === "f" ? fecha(v) : t === "
   : t === "prod" ? `<button class="enlace" title="Ver el detalle del producto" onclick="verProducto(${r.id})">${esc(v)}</button>`
   : t === "venta" ? `<button class="enlace" title="Ver el detalle de la venta" onclick="verVenta(${r.id})">${esc(v)}</button>`
   : t === "mov" ? `<button class="enlace" title="Ver el detalle de este movimiento" onclick="verMovimiento(${r.id})">${esc(v)}</button>`
+  : t === "lin" ? (String(v ?? "").split("\n").filter(Boolean).map(esc).join("<br>") || "—")
   : t === "gan" || t === "ganinv" ? (() => { const g = t === "gan" ? r.ganancia : r.ganancia_inv, p = t === "gan" ? r.ganancia_pct : r.ganancia_inv_pct;
       return g == null ? "—" : `${money(g)} (${p == null ? "—" : pct(p)})`; })() : esc(v);
 const stat = (n, t, nota) => `<div class="stat"><b>${n}</b><span>${t}</span>${nota ? `<small>${nota}</small>` : ""}</div>`;
@@ -337,7 +338,11 @@ async function vistaLista(id) {
   const [filas0, l20, movs, ...ls] = await Promise.all([api(m.tabla), m.lista2 ? api(m.lista2.tabla) : [], m.costos ? api("inventario_movimientos") : [], ...fuentes.map(f => api(f))]);
   let filas = filas0, l2 = l20;
   if (id === "productos") filas = conUltimoLote(filas0, movs);
-  if (id === "ventas") { l2 = itemsConGanancia(l20); filas = ventasConGanancia(filas0, l2); }
+  if (id === "ventas") {
+    l2 = itemsConGanancia(l20); filas = ventasConGanancia(filas0, l2);
+    const pl = {}; [...l2].sort((a, b) => a.id - b.id).forEach(i => (pl[i.venta_id] ||= []).push(`${i.producto} × ${Number(i.cantidad)}`));
+    filas = filas.map(v => ({...v, productos: (pl[v.id] || []).join("\n")}));
+  }
   const listas = Object.fromEntries(fuentes.map((f, i) => [f, ls[i]]));
   if (id === "inventario") {   // la categoría de cada movimiento es la de su producto
     const cat = Object.fromEntries((listas.productos || []).map(p => [p.id, p.categoria]));
@@ -517,11 +522,11 @@ function barraHTML() {
     opcionesFiltro(f).map(o => `<option value="${esc(o[0])}" ${String(e.f[i] ?? "") === String(o[0]) ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select></label>`).join("");
   return `<div class="bar"><label>Buscar<input value="${esc(e.q)}" oninput="setQ(this.value)" placeholder="Escribe para buscar…"></label>${fil}${rango}
     <label>Ordenar por<select onchange="setOrden(this.value)">${m.orden.map((o, i) => `<option value="${i}" ${e.o === i ? "selected" : ""}>${o[0]}</option>`).join("")}</select></label>
-    <button type="button" class="gris" onclick="limpiar()">Limpiar</button></div>`;
+    <button type="button" class="gris" onclick="limpiar()">Limpiar</button>${m.rango ? `<button type="button" onclick="exportarVentas()" title="Descarga en CSV las ventas que ves en la lista">⬇ Exportar CSV</button>` : ""}</div>`;
 }
 function visibles() {
   const {id, m, filas} = VIS, e = E(id), q = e.q.trim().toLowerCase();
-  const r = filas.filter(x => (!q || m.cols.some(c => String(x[c[0]] ?? "").toLowerCase().includes(q))) &&
+  const r = filas.filter(x => (!q || [...m.cols.map(c => c[0]), ...(m.buscar || [])].some(k => String(x[k] ?? "").toLowerCase().includes(q))) &&
     (m.filtros || []).every((f, i) => {
       const v = e.f[i]; if (v === undefined || v === "") return true;
       return f.fn ? f.fn[Number(v)][1](x) : f.mes ? mesCO(x[f.k]) === v : String(x[f.k]) === v;
@@ -557,6 +562,34 @@ function limpiar() { EST[VIS.id] = {q: "", f: {}, o: 0}; document.getElementById
 const rangoDe = e => { const a = e.desde || "", b = e.hasta || ""; return a && b && a > b ? [b, a] : [a, b]; };   // si se escriben al revés, se corrigen
 const hayFiltro = e => !!(e.q.trim() || e.desde || e.hasta || Object.values(e.f).some(v => v !== undefined && v !== ""));
 const suma = (a, fn) => a.reduce((t, x) => t + (Number(fn(x)) || 0), 0);
+
+/* Exporta a CSV las ventas que se ven en la lista (respeta rango de fechas y demás filtros): una fila por producto vendido.
+   Separador «;» y coma decimal para que Excel en español lo abra bien con doble clic. */
+function exportarVentas() {
+  const r = visibles(), e = E(VIS.id), [d1, d2] = rangoDe(e);
+  if (!r.length) { alert("No hay ventas para exportar con este filtro."); return; }
+  const por = {}; VIS.l2.forEach(i => (por[i.venta_id] ||= []).push(i));
+  const n = x => { x = Math.round(Number(x) * 100) / 100; return Number.isInteger(x) ? String(x) : String(x).replace(".", ","); };
+  const t = x => { x = String(x ?? ""); return /^[=+\-@\t\r]/.test(x) ? "'" + x : x; };   // evita que Excel ejecute fórmulas
+  const hora = f => new Date(f).toLocaleTimeString("es-CO", {timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
+  const filas = [["N° venta", "Fecha", "Hora", "Cliente", "Producto", "Lote", "Cantidad", "Precio unitario", "Costo unitario", "Subtotal", "Ganancia", "Total venta", "Debe"]];
+  r.forEach(v => {
+    const base = [v.id, diaCO(v.fecha), hora(v.fecha), t(v.cliente || "Sin cliente")];
+    const its = (por[v.id] || []).sort((a, b) => a.id - b.id);
+    if (!its.length) return filas.push([...base, "", "", "", "", "", "", "", n(v.total), n(v.debe)]);
+    its.forEach((i, k) => filas.push([...base, t(i.producto), t(i.lote), n(i.cantidad), n(i.precio_unitario), n(i.costo_lote), n(i.subtotal), n(i.ganancia),
+      k === 0 ? n(v.total) : "", k === 0 ? n(v.debe) : ""]));   // total y deuda solo en la primera línea, para que las sumas no se dupliquen
+  });
+  const q = c => /[;"\n\r]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : String(c);
+  const csv = "\ufeff" + filas.map(f => f.map(q).join(";")).join("\r\n");
+  const hoy = diaCO(new Date());
+  const nombre = d1 || d2 ? (d1 && d2 ? (d1 === d2 ? d1 : `${d1}_a_${d2}`) : d1 ? `desde_${d1}` : `hasta_${d2}`) : hayFiltro(e) ? `filtradas_${hoy}` : `todas_${hoy}`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
+  a.download = `ventas_${nombre}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
 function setRango(k, v) { E(VIS.id)[k] = v; pintarLista(); }
 function atajoRango(t) {
   const e = E(VIS.id), hoy = diaCO(new Date());
