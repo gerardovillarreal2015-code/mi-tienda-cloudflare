@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi Tienda · Administración</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f5f4;--panel:#fff;--ink:#1c2a27;--muted:#6b7a76;--side:#17352e;--side-ink:#cfe0db;--accent:#e0a526;--line:#dfe5e3;--err:#a8321f}
+*{box-sizing:border-box;margin:0}
+body{font-family:Figtree,system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+aside{width:230px;background:var(--side);color:var(--side-ink);padding:22px 14px;position:sticky;top:0;height:100vh;flex-shrink:0;overflow-y:auto}
+aside h1{font-size:19px;color:#fff;padding:0 10px 20px}
+nav a{display:block;padding:10px 12px;border-radius:8px;color:var(--side-ink);text-decoration:none;margin-bottom:3px;font-weight:500}
+nav a:hover{background:rgba(255,255,255,.08)}
+nav a.active{background:var(--accent);color:#1c2a27;font-weight:700}
+main{flex:1;padding:32px;max-width:1200px;min-width:0}
+h2{font-size:26px;margin-bottom:4px}
+.sub{color:var(--muted);margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:14px}.stat small{display:block;margin-top:4px;color:var(--muted);font-size:12px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;overflow-x:auto}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;margin-bottom:8px}
+form.fila,.bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:flex-end}
+label,.campo{display:flex;flex-direction:column;font-size:13px;color:var(--muted);gap:4px}
+.box.visible{overflow:visible}
+.auto{position:relative}
+.auto-in{width:100%;min-width:240px}
+.auto-lista{position:absolute;z-index:30;left:0;top:100%;min-width:100%;width:max-content;max-width:90vw;max-height:260px;overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.14);margin-top:2px}
+.auto-op{padding:8px 12px;cursor:pointer;color:var(--ink);font-size:14px;display:flex;justify-content:space-between;gap:14px}
+.auto-op small{color:var(--muted);white-space:nowrap}
+.auto-op.sel,.auto-op:hover{background:#eef3f1}
+.auto-op.off{opacity:.5;cursor:not-allowed}
+.auto-nada{padding:8px 12px;color:var(--muted);font-size:14px}
+input,select{padding:9px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;color:var(--ink);min-width:150px;background:#fff}
+input:disabled,select:disabled{background:#eef1f0}
+button{padding:9px 16px;border:0;border-radius:8px;background:var(--side);color:#fff;font:inherit;font-weight:500;cursor:pointer}
+button:hover{background:#0f2520}
+button.gris{background:#6b7a76}button.gris:hover{background:#54625e}
+button.mini{padding:5px 10px;font-size:13px}
+button.peligro{background:#8f2d1d}button.peligro:hover{background:#6e2013}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500;white-space:nowrap}
+/* La columna de botones queda fija a la derecha para que siempre se vea, aunque la tabla sea ancha */
+th.acc,td.acc{position:sticky;right:0;background:var(--panel);white-space:nowrap;box-shadow:-8px 0 8px -8px rgba(0,0,0,.25)}
+.msg{padding:14px;border-radius:8px;background:#fbefec;color:var(--err);margin-bottom:12px}
+.vacio{color:var(--muted);padding:12px 0}
+.login{max-width:360px}
+.sec{font-weight:700;margin:6px 0 8px}
+.lineas{display:flex;flex-direction:column;gap:8px;width:100%}
+.linea{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.total{font-size:18px;font-weight:700;align-self:center}
+.subt{align-self:center;color:var(--muted);font-size:14px;margin:4px 0}
+.hb{display:grid;grid-template-columns:minmax(90px,150px) 1fr 40px;gap:8px;align-items:center;margin:8px 0;font-size:14px}
+.hbar{background:var(--line);border-radius:6px;height:12px}.hbar i{display:block;height:100%;background:var(--accent);border-radius:6px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:760px){body{flex-direction:column}aside{width:100%;height:auto;position:static;padding:12px}
+nav{display:flex;overflow-x:auto;gap:4px}nav a{white-space:nowrap;margin:0}aside h1{padding-bottom:10px}main{padding:18px}}
+</style>
+</head>
+<body>
+<aside><h1>Mi Tienda</h1><nav id="menu"></nav></aside>
+<main id="app"></main>
+
+<script>
+/* ---------- Utilidades ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = n => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(Number(n)||0);
+const pct = n => Number(n).toLocaleString("es-CO", {maximumFractionDigits: 1}) + "%";   // 44,7%
+const TZ = "America/Bogota";   // todas las fechas se muestran en hora de Colombia
+const fecha = f => f ? new Date(f).toLocaleString("es-CO", {timeZone: TZ, dateStyle: "short", timeStyle: "short"}) : "";
+const soloFecha = f => f ? String(f).slice(0, 10).split("-").reverse().join("/") : "";
+const diaCO = f => new Date(f).toLocaleDateString("en-CA", {timeZone: TZ});
+const mesCO = f => diaCO(f).slice(0, 7);
+const nombreMes = m => new Date(m + "-15T12:00:00").toLocaleDateString("es-CO", {month: "long", year: "numeric"});
+const mesCorto = m => new Date(m + "-15T12:00:00").toLocaleDateString("es-CO", {month: "short"}).replace(".", "");
+const mesAnterior = m => { const [y, n] = m.split("-").map(Number); const d = new Date(y, n - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+
+async function api(tabla, method = "GET", body, id) {
+  let r;
+  try {
+    r = await fetch(`/api?tabla=${tabla}${id ? "&id=" + id : ""}`, {
+      method,
+      headers: {"x-admin-key": sessionStorage.getItem("k") || "", "Content-Type": "application/json"},
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch { throw new Error("SIN_SERVIDOR"); }
+  if (r.status === 401) { sessionStorage.removeItem("k"); throw new Error("AUTH"); }
+  if (r.status === 404 && !(r.headers.get("content-type") || "").includes("json")) throw new Error("SIN_SERVIDOR");
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Error inesperado");
+  return d;
+}
+const error = e => e.message === "SIN_SERVIDOR"
+  ? "No se pudo conectar con el servidor. Abre el sitio desde su dirección de Netlify y revisa que la función esté desplegada."
+  : esc(e.message);
+
+/* ---------- Configuración de módulos ----------
+   cols: columnas de la lista · campos: formulario · filtros: {k,l} valores distintos, {k,l,mes:1} por mes, {l,fn:[[texto,función]]} a medida
+   orden: [texto, columna, tipo (t texto, n número, d fecha), dirección (1 o -1)] */
+const nombreAZ = [["Nombre (A-Z)","nombre","t"],["Nombre (Z-A)","nombre","t",-1]];
+const CFG = {
+  categorias:{nombre:"Categorías",sub:"Agrupa tus productos (licores, bebidas, mecatos…)",tabla:"categorias",boton:"Agregar categoría",
+    aviso:"Solo se puede eliminar si no tiene productos.",
+    cols:[["nombre","Categoría"],["productos","Productos"]],
+    campos:[{k:"nombre",l:"Nombre de la categoría",req:1}],
+    orden:[...nombreAZ,["Más productos","productos","n",-1]]},
+  productos:{nombre:"Productos",sub:"Catálogo: el código se genera solo. El precio de venta es el último que escribiste en una venta. Ganancia = precio de venta − costo del último lote (% sobre el costo)",tabla:"productos",costos:1,boton:"Agregar producto",
+    aviso:"Solo se puede eliminar si no tiene compras ni ventas registradas.",
+    cols:[["codigo","Código"],["nombre","Producto"],["categoria","Categoría"],["precio_total_compra","Precio total de compra","$"],["unidades_compra","Unidades compradas"],
+      ["precio_compra","Precio unitario de compra","$"],["costo_ult","Costo último lote","$"],["precio_venta","Precio de venta al público","$"],["ganancia","Ganancia por unidad","gan"],["stock","Stock"]],
+    campos:[{k:"nombre",l:"Producto",req:1},{k:"categoria_id",l:"Categoría",t:"select",src:"categorias",ver:"nombre",req:1},
+      {k:"precio_total_compra",l:"Precio total de compra",t:"number",req:1},{k:"unidades_compra",l:"Unidades compradas",t:"number",req:1},
+      {k:"precio_venta",l:"Precio de venta al público (por unidad)",t:"number",req:1}],
+    hint:{total:"precio_total_compra",unidades:"unidades_compra",venta:"precio_venta"},
+    filtros:[{k:"categoria",l:"Categoría"},{l:"Stock",fn:[["Con stock",r=>r.stock>0],["Sin stock",r=>r.stock<=0],["Stock bajo",r=>r.stock<=r.stock_minimo]]}],
+    orden:[...nombreAZ,["Código","codigo","t"],["Mayor ganancia %","ganancia_pct","n",-1],["Mayor ganancia $","ganancia","n",-1],["Mayor stock","stock","n",-1],["Menor stock","stock","n"]]},
+  inventario:{nombre:"Inventario",sub:"Compras y ajustes de stock. La fecha y hora se registran solas (hora de Colombia)",tabla:"inventario_movimientos",boton:"Registrar movimiento",
+    aviso:"Solo se puede eliminar si no se han vendido sus unidades.",
+    cols:[["fecha","Fecha y hora","f"],["tipo","Tipo"],["producto","Producto"],["lote","N° de lote"],["proveedor","Proveedor"],["cantidad","Unidades"],
+      ["precio_total","Precio total","$"],["costo_unitario","Precio unitario","$"],["fecha_vencimiento","Vence","d"]],
+    campos:[{k:"producto_id",l:"Producto",t:"select",src:"productos",ver:"nombre",req:1,bloquear:1,auto:1},
+      {k:"proveedor_id",l:"Proveedor (opcional)",t:"select",src:"proveedores",ver:"empresa",auto:1},
+      {k:"tipo",l:"Tipo",t:"select",op:["Compra","Ajuste"]},{k:"lote",l:"N° de lote"},
+      {k:"cantidad",l:"Unidades compradas (ajuste: negativo si resta)",t:"number",req:1},{k:"precio_total",l:"Precio total pagado",t:"number"},
+      {k:"fecha_vencimiento",l:"Fecha de vencimiento",t:"date"}],
+    hint:{total:"precio_total",unidades:"cantidad",texto:"Precio unitario"},
+    filtros:[{k:"producto",l:"Producto"},{k:"proveedor",l:"Proveedor"},{k:"tipo",l:"Tipo"},{k:"fecha",l:"Mes",mes:1}],
+    orden:[["Más recientes","fecha","d",-1],["Más antiguos","fecha","d"],["Producto (A-Z)","producto","t"],["Vence primero","fecha_vencimiento","d"]]},
+  ventas:{nombre:"Ventas",sub:"Eliges el lote (solo salen los que tienen unidades) y escribes el precio de venta al público. Ganancia = total vendido − total del costo del lote elegido, y % sobre el costo. Al registrar la venta, el precio y el costo quedan fijos. Hora de Colombia",tabla:"ventas",
+    aviso:"Los productos vuelven al stock y se quita su ingreso en caja.",
+    costos:1,
+    fuentes:["clientes","productos","lotes_stock"],
+    cols:[["id","N°"],["fecha","Fecha y hora","f"],["cliente","Cliente"],["detalle","Productos"],["unidades","Unidades"],["total","Total","$"],["debe","Debe","$"],["ganancia","Ganancia","gan"]],
+    campos:[{k:"cliente_id",l:"Cliente que compra",t:"select",src:"clientes",ver:"nombre",auto:1},{k:"debe",l:"Debe (lo que queda fiado)",t:"number"}],
+    filtros:[{k:"cliente",l:"Cliente"},{l:"Pago",fn:[["Con deuda",r=>Number(r.debe)>0],["Pagadas",r=>Number(r.debe)===0]]},{k:"fecha",l:"Mes",mes:1}],
+    orden:[["Más recientes","fecha","d",-1],["Más antiguas","fecha","d"],["Mayor total","total","n",-1],["Menor total","total","n"],["Mayor ganancia","ganancia","n",-1],["Cliente (A-Z)","cliente","t"]],
+    lista2:{tabla:"venta_items",titulo:"Detalle de productos vendidos",
+      cols:[["venta_id","Venta N°"],["fecha","Fecha y hora","f"],["cliente","Cliente"],["producto","Producto"],["lote","N° de lote"],["cantidad","Cantidad"],["precio_unitario","Precio unitario","$"],["costo_lote","Costo (lote vendido)","$"],["subtotal","Total","$"],["ganancia_inv","Ganancia","ganinv"]]}},
+  clientes:{nombre:"Clientes",sub:"Tus compradores y lo que te deben",tabla:"clientes",boton:"Agregar cliente",
+    aviso:"Solo se puede eliminar si no tiene ventas ni abonos.",
+    cols:[["id","N°"],["nombre","Nombre"],["telefono","Teléfono"],["correo","Correo"],["deuda","Deuda","$"]],
+    campos:[{k:"nombre",l:"Nombre",req:1},{k:"telefono",l:"Teléfono"},{k:"correo",l:"Correo"}],
+    filtros:[{l:"Deuda",fn:[["Con deuda",r=>Number(r.deuda)>0],["Sin deuda",r=>Number(r.deuda)<=0]]}],
+    orden:[...nombreAZ,["Mayor deuda","deuda","n",-1],["Más recientes","creado","d",-1]],
+    extra:{tabla:"abonos",titulo:"Registrar abono a una deuda",boton:"Registrar abono",
+      campos:[{k:"cliente_id",l:"Cliente",t:"select",src:"clientes",ver:"nombre",req:1,auto:1},{k:"monto",l:"Monto del abono",t:"number",req:1}]},
+    lista2:{tabla:"abonos",titulo:"Abonos registrados",borrar:1,cols:[["fecha","Fecha y hora","f"],["cliente","Cliente"],["monto","Monto","$"]]}},
+  proveedores:{nombre:"Proveedores",sub:"Quién te surte",tabla:"proveedores",boton:"Agregar proveedor",
+    aviso:"Solo se puede eliminar si no tiene compras registradas.",
+    cols:[["empresa","Empresa"],["contacto","Contacto"],["telefono","Teléfono"]],
+    campos:[{k:"empresa",l:"Empresa",req:1},{k:"contacto",l:"Contacto"},{k:"telefono",l:"Teléfono"}],
+    orden:[["Empresa (A-Z)","empresa","t"],["Empresa (Z-A)","empresa","t",-1],["Más recientes","creado","d",-1]]},
+  caja:{nombre:"Caja",sub:"Ingresos y egresos. Los de ventas y abonos son automáticos y se cambian desde su módulo",tabla:"caja_movimientos",boton:"Registrar movimiento",
+    puede:r=>!r.venta_id&&!r.abono_id,
+    cols:[["fecha","Fecha y hora","f"],["concepto","Concepto"],["tipo","Tipo"],["monto","Monto","$"]],
+    campos:[{k:"concepto",l:"Concepto",req:1},{k:"tipo",l:"Tipo",t:"select",op:["Ingreso","Egreso"]},{k:"monto",l:"Monto",t:"number",req:1}],
+    filtros:[{k:"tipo",l:"Tipo"},{k:"fecha",l:"Mes",mes:1}],
+    orden:[["Más recientes","fecha","d",-1],["Más antiguos","fecha","d"],["Mayor monto","monto","n",-1]]}
+};
+
+const celda = (v, t, r) => t === "$" ? money(v) : t === "f" ? fecha(v) : t === "d" ? soloFecha(v)
+  : t === "gan" || t === "ganinv" ? (() => { const g = t === "gan" ? r.ganancia : r.ganancia_inv, p = t === "gan" ? r.ganancia_pct : r.ganancia_inv_pct;
+      return g == null ? "—" : `${money(g)} (${p == null ? "—" : pct(p)})`; })() : esc(v);
+const stat = (n, t, nota) => `<div class="stat"><b>${n}</b><span>${t}</span>${nota ? `<small>${nota}</small>` : ""}</div>`;
+const encabezado = (t, s) => `<h2>${t}</h2><p class="sub">${s}</p>`;
+
+function tablaHTML(cols, filas, acc) {
+  if (!filas.length) return `<p class="vacio">No hay registros.</p>`;
+  return `<table><tr>${cols.map(c => `<th>${c[1]}</th>`).join("")}${acc ? `<th class="acc">Acciones</th>` : ""}</tr>${
+    filas.map(f => `<tr>${cols.map(c => `<td>${celda(f[c[0]], c[2], f)}</td>`).join("")}${acc ? `<td class="acc">${acc(f)}</td>` : ""}</tr>`).join("")}</table>`;
+}
+
+/* ---------- Costo de compra = el del ÚLTIMO LOTE (la compra más reciente del inventario) ----------
+   Se calcula aquí con los datos que ya existen; no se cambia nada en la base de datos. */
+function indexarCompras(movs) {
+  const por = {};
+  movs.filter(m => m.tipo === "Compra" && Number(m.cantidad) > 0)
+    .sort((a, b) => a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : b.id - a.id)   // la más nueva primero
+    .forEach(m => (por[m.producto_id] ||= []).push(m));
+  return por;
+}
+const costoUlt = (por, pid) => por[pid] ? Number(por[pid][0].costo_unitario) : null;
+/* Productos: costo del último lote y ganancia por unidad = precio de venta actual − ese costo */
+function conUltimoLote(prods, movs) {
+  const por = indexarCompras(movs);
+  return prods.map(p => {
+    const costo = costoUlt(por, p.id) ?? Number(p.precio_compra), g = Number(p.precio_venta) - costo;
+    return {...p, costo_ult: costo, ganancia: g, ganancia_pct: costo > 0 ? Math.round(g / costo * 1000) / 10 : null};
+  });
+}
+/* Líneas de venta: usan el precio y el costo GUARDADOS al vender (costo del lote elegido). No se recalculan nunca. */
+function itemsConGanancia(items) {
+  return items.map(i => {
+    const costo = Number(i.costo_unitario), u = Number(i.precio_unitario) - costo;
+    return {...i, costo_lote: costo, ganancia: Number(i.cantidad) * u, ganancia_inv: Number(i.cantidad) * u, ganancia_inv_pct: costo > 0 ? Math.round(u / costo * 1000) / 10 : null};
+  });
+}
+/* Ventas: ganancia total = total vendido − total del costo (con el último lote) */
+function ventasConGanancia(ventas, items) {
+  const g = {};
+  items.forEach(i => { const a = g[i.venta_id] ||= {g: 0, c: 0}; a.g += i.ganancia; a.c += Number(i.cantidad) * i.costo_lote; });
+  return ventas.map(v => { const a = g[v.id]; return {...v, ganancia: a ? a.g : null, ganancia_pct: a && a.c > 0 ? Math.round(a.g / a.c * 1000) / 10 : null}; });
+}
+
+/* ---------- Gráficos (SVG, sin librerías) ---------- */
+function grafico(datos, series) {
+  const W = 640, H = 230, base = H - 26, alto = H - 56;
+  const max = Math.max(1, ...datos.flatMap(d => series.map(s => Number(d[s[0]]) || 0)));
+  const bw = W / datos.length, w = Math.min(28, bw * 0.8 / series.length);
+  const barras = datos.map((d, i) => {
+    const cx = i * bw + bw / 2, x0 = cx - w * series.length / 2;
+    return series.map((s, j) => { const h = (Number(d[s[0]]) || 0) / max * alto;
+      return `<rect x="${x0 + j * w}" y="${base - h}" width="${w - 1}" height="${h}" rx="2" style="fill:${s[2]}"><title>${esc(d.e)} · ${s[1]}: ${money(d[s[0]])}</title></rect>`; }).join("") +
+      `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="${datos.length > 12 ? 9 : 12}" fill="currentColor">${esc(d.e)}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" style="color:var(--muted)"><text x="0" y="12" font-size="11" fill="currentColor">Máximo: ${money(max)}</text><line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="currentColor" opacity=".3"/>${barras}</svg>
+    <p class="subt">${series.map(s => `<span style="color:${s[2]}">■</span> ${s[1]}`).join(" &nbsp; ")}</p>`;
+}
+
+/* ---------- Dashboard, reportes, vencimientos ---------- */
+let MES = null;
+const VISTAS = {
+  async dashboard() {
+    const [p0, c, v, k, l, it0, movs] = await Promise.all(["productos","clientes","ventas","caja_movimientos","lotes","venta_items","inventario_movimientos"].map(t => api(t)));
+    const p = conUltimoLote(p0, movs), it = itemsConGanancia(it0);
+    const hoyMes = mesCO(new Date());
+    const meses = [...new Set([hoyMes, ...v.map(x => mesCO(x.fecha))])].sort().reverse();
+    if (!MES || !meses.includes(MES)) MES = hoyMes;
+    const suma = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+    const delMes = (arr, m) => arr.filter(x => mesCO(x.fecha) === m);
+    const vm = delMes(v, MES), im = delMes(it, MES);
+    const ventasMes = suma(vm, x => Number(x.total)), gananciaMes = suma(im, x => Number(x.ganancia));
+    const previo = suma(delMes(v, mesAnterior(MES)), x => Number(x.total));
+    const dif = previo > 0 ? Math.round((ventasMes - previo) / previo * 100) : null;
+    const nota = dif == null ? "Sin ventas el mes anterior" : `${dif >= 0 ? "▲" : "▼"} ${Math.abs(dif)}% frente al mes anterior`;
+    const [y, n] = MES.split("-").map(Number);
+    const porDia = Array.from({length: new Date(y, n, 0).getDate()}, (_, i) => ({e: String(i + 1), a: 0}));
+    vm.forEach(x => { porDia[Number(diaCO(x.fecha).slice(8, 10)) - 1].a += Number(x.total); });
+    const ult = []; for (let m = MES, i = 0; i < 6; i++, m = mesAnterior(m)) ult.unshift(m);
+    const porMes = ult.map(m => ({e: mesCorto(m), a: suma(delMes(v, m), x => Number(x.total)), b: suma(delMes(it, m), x => Number(x.ganancia))}));
+    const ac = {};
+    im.forEach(x => { (ac[x.producto_id] ||= {producto: x.producto, cant: 0}).cant += Number(x.cantidad); });
+    const top = Object.values(ac).sort((a, b) => b.cant - a.cant).slice(0, 5), maxU = Math.max(1, ...top.map(t => t.cant));
+    const bajo = p.filter(x => Number(x.stock) <= Number(x.stock_minimo)).length;
+    const porVencer = l.filter(x => x.dias_restantes >= 0 && x.dias_restantes <= 5).length, vencidos = l.filter(x => x.dias_restantes < 0).length;
+    return encabezado("Dashboard","Indicadores y gráficos de tu tienda") +
+      `<div class="bar"><label>Mes<select onchange="MES=this.value;mostrar()">${meses.map(m => `<option value="${m}" ${m === MES ? "selected" : ""}>${nombreMes(m)}</option>`).join("")}</select></label></div>
+      <div class="stats">${stat(money(ventasMes),"Ventas del mes",nota)}${stat(money(gananciaMes),"Ganancia del mes")}${stat(vm.length,"Número de ventas")}${
+        stat(money(vm.length ? ventasMes / vm.length : 0),"Venta promedio")}${stat(suma(im, x => Number(x.cantidad)),"Unidades vendidas")}</div>
+      <div class="grid2"><div class="box"><b>Ventas por día · ${nombreMes(MES)}</b>${grafico(porDia, [["a","Ventas","var(--side)"]])}</div>
+        <div class="box"><b>Ventas y ganancia · últimos 6 meses</b>${grafico(porMes, [["a","Ventas","var(--side)"],["b","Ganancia","var(--accent)"]])}</div>
+        <div class="box"><b>Productos más vendidos · ${nombreMes(MES)}</b>${top.length ? top.map(t =>
+          `<div class="hb"><span>${esc(t.producto)}</span><div class="hbar"><i style="width:${t.cant / maxU * 100}%"></i></div><b>${t.cant}</b></div>`).join("") : `<p class="vacio">Sin ventas en este mes.</p>`}</div></div>
+      <p class="sec" style="margin-top:18px">Estado actual de la tienda</p>
+      <div class="stats">${stat(money(suma(c, x => Number(x.deuda))),"Por cobrar a clientes")}${
+        stat(money(k.reduce((a, x) => a + (x.tipo === "Ingreso" ? 1 : -1) * Number(x.monto), 0)),"Saldo en caja")}${
+        stat(bajo,"Productos con stock bajo")}${stat(porVencer,"Compras por vencer (5 días)")}${stat(vencidos,"Compras vencidas con stock")}${
+        stat(money(suma(p, x => x.stock * x.costo_ult)),"Inventario a precio de compra")}${stat(c.length,"Clientes registrados")}</div>`;
+  },
+  async reportes() {
+    const [p0, v, k, c, it0, movs] = await Promise.all(["productos","ventas","caja_movimientos","clientes","venta_items","inventario_movimientos"].map(t => api(t)));
+    const p = conUltimoLote(p0, movs), it = itemsConGanancia(it0);
+    const suma = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+    const caja = tipo => suma(k.filter(x => x.tipo === tipo), x => Number(x.monto));
+    const acum = {};
+    it.forEach(x => { const r = acum[x.producto_id] ||= {producto: x.producto, cantidad: 0, ganancia: 0}; r.cantidad += Number(x.cantidad); r.ganancia += Number(x.ganancia); });
+    const top = Object.values(acum).sort((a, b) => b.cantidad - a.cantidad).slice(0, 5);
+    return encabezado("Reportes","Totales de la tienda") + `<div class="stats">${
+      stat(money(suma(v, x => Number(x.total))),"Total vendido")}${stat(money(suma(it, x => Number(x.ganancia))),"Ganancia de las ventas")}${
+      stat(money(suma(p, x => x.stock * x.costo_ult)),"Inventario a precio de compra")}${stat(money(suma(p, x => x.stock * x.precio_venta)),"Inventario a precio de venta")}${
+      stat(money(suma(p, x => x.stock * x.ganancia)),"Ganancia potencial del inventario")}${stat(money(caja("Ingreso")),"Ingresos en caja")}${
+      stat(money(caja("Egreso")),"Egresos en caja")}${stat(money(suma(c, x => Number(x.deuda))),"Por cobrar a clientes")}</div>
+      <div class="box"><b>Productos más vendidos</b>${tablaHTML([["producto","Producto"],["cantidad","Unidades vendidas"],["ganancia","Ganancia","$"]], top)}</div>`;
+  },
+  vencimientos: () => vistaVencimientos()
+};
+
+let DIAS = 5;
+function cambiarDias(v) { DIAS = Math.max(0, Math.floor(Number(v)) || 0); mostrar(); }
+async function vistaVencimientos() {
+  const lotes = await api("lotes");
+  const orden = (a, b) => a.dias_restantes - b.dias_restantes;
+  const vencidos = lotes.filter(x => x.dias_restantes < 0).sort(orden)
+    .map(x => ({...x, plazo: `Hace ${-x.dias_restantes} ${x.dias_restantes === -1 ? "día" : "días"}`}));
+  const porVencer = lotes.filter(x => x.dias_restantes >= 0 && x.dias_restantes <= DIAS).sort(orden)
+    .map(x => ({...x, plazo: x.dias_restantes === 0 ? "Vence hoy" : `En ${x.dias_restantes} ${x.dias_restantes === 1 ? "día" : "días"}`}));
+  const uni = arr => arr.reduce((a, x) => a + Number(x.restante), 0);
+  const cols = t => [["producto","Producto"],["categoria","Categoría"],["lote","N° de lote"],["fecha_vencimiento","Vence","d"],["plazo",t],["restante","Unidades que quedan"]];
+  const atajos = [3,5,7,15,30].map(n => `<button type="button" onclick="cambiarDias(${n})">${n} días</button>`).join("");
+  return encabezado("Productos por vencer","Cada fila es un lote. Cuando se acaban sus unidades, desaparece de esta lista. Las ventas descuentan primero el lote que vence antes") +
+    `<div class="box"><form class="fila" onsubmit="return false">
+      <label>Avisar con cuántos días de anticipación<input type="number" min="0" max="365" value="${DIAS}" onchange="cambiarDias(this.value)"></label>${atajos}</form>
+      <div class="stats">${stat(uni(vencidos),"Unidades ya vencidas")}${stat(uni(porVencer),`Unidades que vencen en ${DIAS} días o menos`)}</div></div>
+    <div class="box" style="margin-top:16px"><b>Por vencer en los próximos ${DIAS} días</b>${
+      porVencer.length ? tablaHTML(cols("Vence"), porVencer) : `<p class="vacio">No hay productos por vencer en ese plazo.</p>`}</div>
+    <div class="box" style="margin-top:16px"><b>Ya vencidos (con unidades en stock)</b>${
+      vencidos.length ? tablaHTML(cols("Venció"), vencidos) : `<p class="vacio">No hay productos vencidos.</p>`}</div>`;
+}
+
+/* ---------- Módulos con lista, filtros, orden, editar y eliminar ---------- */
+let VIS = null, HINT = null, PRODS = [], LOTES = [], COSTOMOV = {};
+const EST = {};
+const E = id => EST[id] ||= {q: "", f: {}, o: 0};
+
+async function vistaLista(id) {
+  const m = CFG[id];
+  HINT = m.hint || null;
+  const todos = [...m.campos, ...(m.extra ? m.extra.campos : [])];
+  const fuentes = [...new Set([...todos.filter(c => c.src).map(c => c.src), ...(m.fuentes || [])])];
+  const [filas0, l20, movs, ...ls] = await Promise.all([api(m.tabla), m.lista2 ? api(m.lista2.tabla) : [], m.costos ? api("inventario_movimientos") : [], ...fuentes.map(f => api(f))]);
+  let filas = filas0, l2 = l20;
+  if (id === "productos") filas = conUltimoLote(filas0, movs);
+  if (id === "ventas") { l2 = itemsConGanancia(l20); filas = ventasConGanancia(filas0, l2); }
+  VIS = {id, m, filas, l2, movs, edit: null, listas: Object.fromEntries(fuentes.map((f, i) => [f, ls[i]]))};
+  return encabezado(m.nombre, m.sub) +
+    `<div class="box visible"><div id="aviso"></div><div id="formbox">${formHTML()}</div></div>
+     <div class="box" style="margin-top:16px"><div id="barra">${barraHTML()}</div><div id="lista">${listaHTML()}</div></div>${lista2HTML()}`;
+}
+
+const opciones = c => c.src ? VIS.listas[c.src].map(o => [o.id, o[c.ver]]) : c.op.map(o => [o, o]);
+/* ---------- Autocompletar: el usuario escribe y se sugieren los registros que existen ---------- */
+const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const extraAuto = (src, o) => src === "productos" ? `${money(o.precio_venta)} · stock ${o.stock}` : src === "clientes" ? (Number(o.deuda) > 0 ? `debe ${money(o.deuda)}` : (o.telefono || "")) : src === "proveedores" ? (o.contacto || "") : "";
+const itemsAuto = inp => VIS.listas[inp.dataset.src].map(o => ({id: o.id, t: o[inp.dataset.ver], x: extraAuto(inp.dataset.src, o),
+  off: !!inp.dataset.sinstock && Number(o.stock) <= 0}));
+const autoHid = inp => inp.parentNode.querySelector('input[type=hidden]');
+const autoLista = inp => inp.parentNode.querySelector(".auto-lista");
+function autoHTML(c, v, bloq, o = {}) {
+  const act = v ? VIS.listas[c.src].find(x => String(x.id) === String(v)) : null;
+  return `<div class="campo">${c.l}<div class="auto">
+    <input class="auto-in" type="text" autocomplete="off" placeholder="Escribe para buscar…" value="${esc(act ? act[c.ver] : "")}"
+      data-src="${c.src}" data-ver="${c.ver}" ${o.sinstock ? 'data-sinstock="1"' : ""} ${o.onpick ? `data-onpick="${o.onpick}"` : ""} ${c.req ? "required" : ""} ${bloq ? "disabled" : ""}
+      oninput="autoEscribir(this)" onfocus="autoBuscar(this)" onkeydown="autoTecla(event,this)" onblur="autoCerrar(this)">
+    <input type="hidden" ${o.cls ? `class="${o.cls}"` : ""} name="${c.k}" value="${esc(v ?? "")}" ${bloq ? "disabled" : ""}>
+    <div class="auto-lista" hidden></div></div></div>`;
+}
+const autoAvisar = inp => { const f = inp.dataset.onpick; if (f && window[f]) window[f](autoHid(inp)); };
+function autoEscribir(inp) {
+  const hid = autoHid(inp);
+  inp.setCustomValidity("");
+  if (hid.value) { hid.value = ""; autoAvisar(inp); }   // el texto cambió: ya no hay nada elegido
+  autoBuscar(inp);
+}
+function autoBuscar(inp) {
+  const lista = autoLista(inp), q = norm(inp.value.trim());
+  const r = itemsAuto(inp).filter(i => !q || norm(i.t).includes(q))
+    .sort((a, b) => (norm(a.t).startsWith(q) ? 0 : 1) - (norm(b.t).startsWith(q) ? 0 : 1) || String(a.t).localeCompare(String(b.t), "es")).slice(0, 8);
+  inp._r = r; inp._i = r.findIndex(x => !x.off);
+  lista.innerHTML = r.length ? r.map((x, i) => `<div class="auto-op ${x.off ? "off" : ""} ${i === inp._i ? "sel" : ""}" ${x.off ? "" : `onmousedown="autoElegir(event,this,${x.id})"`}><span>${esc(x.t)}</span><small>${esc(x.off ? "sin stock" : x.x)}</small></div>`).join("")
+    : `<div class="auto-nada">No hay coincidencias</div>`;
+  lista.hidden = false;
+}
+function autoElegir(ev, el, id) {
+  ev.preventDefault();
+  const inp = el.closest(".auto").querySelector(".auto-in"), it = inp._r.find(x => x.id === id);
+  inp.value = it.t; autoHid(inp).value = id; inp.setCustomValidity(""); autoLista(inp).hidden = true; autoAvisar(inp);
+}
+function autoResolver(inp) {   // si escribió el nombre completo sin elegirlo de la lista, lo reconoce; si no, avisa
+  const hid = autoHid(inp), t = norm(inp.value.trim());
+  if (!hid.value && t) {
+    const it = itemsAuto(inp).find(x => norm(x.t) === t && !x.off);
+    if (it) { hid.value = it.id; inp.value = it.t; autoAvisar(inp); }
+  }
+  inp.setCustomValidity(!hid.value && t ? "Elige una opción de la lista" : "");
+}
+function autoCerrar(inp) { autoLista(inp).hidden = true; autoResolver(inp); }
+function autoTecla(ev, inp) {
+  const lista = autoLista(inp), r = inp._r || [];
+  if (ev.key === "Escape") { lista.hidden = true; return; }
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    if (lista.hidden) autoBuscar(inp);
+    const rr = inp._r || [], n = rr.length;
+    if (!n || rr.every(x => x.off)) return;
+    let i = inp._i ?? -1;
+    do { i = (i + (ev.key === "ArrowDown" ? 1 : n - 1)) % n; } while (rr[i].off);
+    inp._i = i;
+    [...lista.children].forEach((c, k) => c.classList.toggle("sel", k === i));
+    if (lista.children[i] && lista.children[i].scrollIntoView) lista.children[i].scrollIntoView({block: "nearest"});
+  }
+  if (ev.key === "Enter") {
+    if (!lista.hidden && r[inp._i] && !r[inp._i].off) { ev.preventDefault(); autoElegir({preventDefault() {}}, lista.children[inp._i], r[inp._i].id); }
+    else autoResolver(inp);
+  }
+}
+
+function campoHTML(c, v, bloq) {
+  if (c.auto) return autoHTML(c, v, bloq);
+  const val = v ?? "";
+  const ctrl = c.t === "select"
+    ? `<select name="${c.k}" ${c.req ? "required" : ""} ${bloq ? "disabled" : ""}>${c.src ? `<option value="" ${c.req ? "disabled" : ""} ${val === "" ? "selected" : ""}>${c.req ? "Elegir…" : "—"}</option>` : ""}${
+        opciones(c).map(o => `<option value="${esc(o[0])}" ${String(o[0]) === String(val) ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select>`
+    : `<input name="${c.k}" type="${c.t || "text"}" value="${esc(val)}" ${c.t === "number" ? 'step="any"' : ""} ${c.req ? "required" : ""} ${bloq ? "disabled" : ""}>`;
+  return `<label>${c.l}${ctrl}</label>`;
+}
+
+function formHTML() {
+  const {id, m, edit} = VIS;
+  const principal = (id === "ventas" && !edit) ? formVentaHTML() :
+    `<p class="sec">${edit ? `Editando registro #${edit.id}` : "Agregar nuevo"}</p>${edit && id === "ventas" ? '<p class="subt">Aquí solo se cambian el cliente y lo que debe: el precio de venta y el costo quedan fijos. Para cambiar los productos, elimina la venta y regístrala de nuevo.</p>' : ""}
+    <form class="fila" ${m.hint ? 'oninput="hint(this)"' : ""} onsubmit="guardar(event)">${m.campos.map(c => campoHTML(c, edit ? edit[c.k] : null, edit && c.bloquear)).join("")}
+    <button>${edit ? "Guardar cambios" : m.boton}</button>${edit ? '<button type="button" class="gris" onclick="cancelar()">Cancelar</button>' : ""}${m.hint ? '<span class="total" id="hint"></span>' : ""}</form>`;
+  const extra = m.extra ? `<p class="sec">${m.extra.titulo}</p><form class="fila" onsubmit="guardarExtra(event)">${m.extra.campos.map(c => campoHTML(c)).join("")}<button>${m.extra.boton}</button></form>` : "";
+  return principal + extra;
+}
+function pintarForm() {
+  document.getElementById("formbox").innerHTML = formHTML();
+  const f = document.querySelector("#formbox form");
+  if (VIS.edit && HINT) hint(f);
+}
+
+function formVentaHTML() {
+  PRODS = VIS.listas.productos; LOTES = VIS.listas.lotes_stock; COSTOMOV = Object.fromEntries(VIS.movs.filter(m => Number(m.cantidad) > 0).map(m => [m.id, Number(m.costo_unitario)]));
+  return `<p class="sec">Registrar venta</p><form class="fila" oninput="calc()" onsubmit="guardarVenta(event)">
+    ${autoHTML({k:"cliente_id",l:"Cliente que compra",src:"clientes",ver:"nombre"})}
+    <label>Debe (lo que queda fiado; 0 si pagó todo)<input name="debe" type="number" min="0" step="any" value="0"></label>
+    <div class="lineas" id="lineas">${lineaHTML()}</div>
+    <button type="button" onclick="addLinea()">+ Agregar otro producto</button>
+    <span class="total" id="total">Total: ${money(0)}</span><button>Registrar venta</button></form>`;
+}
+const lineaHTML = () => `<div class="linea">${autoHTML({k:"producto_id",l:"Producto",src:"productos",ver:"nombre",req:1}, null, false, {sinstock:1, onpick:"cambiarProducto", cls:"pid"})}
+  <label>N° de lote (solo con unidades)<select class="lote" disabled><option value="">Primero elige el producto</option></select></label>
+  <label>Cantidad<input class="cant" type="number" min="1" step="1" value="1"></label>
+  <label>Precio de venta al público (por unidad)<input class="precio" type="number" min="0" step="any" placeholder="Escríbelo según el último lote"></label>
+  <span class="subt">Subtotal: ${money(0)}</span>
+  <button type="button" class="gris" onclick="this.parentNode.remove();calc()">Quitar</button></div>`;
+const addLinea = () => document.getElementById("lineas").insertAdjacentHTML("beforeend", lineaHTML());
+/* El lote depende del producto: solo salen los lotes de ese producto que todavía tienen unidades (primero el que vence antes).
+   El precio se sugiere con el último que se usó para ese producto, pero el usuario lo escribe/cambia. */
+function cambiarProducto(sel) {
+  const linea = sel.closest(".linea"), lote = linea.querySelector(".lote"), precio = linea.querySelector(".precio");
+  const ls = LOTES.filter(x => String(x.producto_id) === sel.value && x.restante > 0)
+    .sort((a, b) => (a.fecha_vencimiento || "9999") < (b.fecha_vencimiento || "9999") ? -1 : 1);
+  lote.disabled = !ls.length;
+  lote.innerHTML = ls.length
+    ? ls.map(x => `<option value="${x.id}">${esc(x.lote)} · ${x.fecha_vencimiento ? "vence " + soloFecha(x.fecha_vencimiento) : "sin vencimiento"} · quedan ${x.restante}</option>`).join("")
+    : `<option value="">${sel.value ? "Sin lotes con unidades" : "Primero elige el producto"}</option>`;
+  const p = PRODS.find(x => String(x.id) === sel.value);
+  precio.value = p && Number(p.precio_venta) > 0 ? Number(p.precio_venta) : "";
+  precio.required = !!sel.value;
+  calc();
+}
+function calc() {
+  let t = 0, g = 0;
+  document.querySelectorAll(".linea").forEach(l => {
+    const p = PRODS.find(x => String(x.id) === l.querySelector(".pid").value);
+    const mid = l.querySelector(".lote").value, lote = LOTES.find(x => String(x.id) === mid);
+    l.querySelector(".cant").max = lote ? lote.restante : "";            // no se puede vender más de lo que tiene el lote
+    const cant = Number(l.querySelector(".cant").value) || 0, precio = Number(l.querySelector(".precio").value) || 0;
+    let txt = "Subtotal: " + money(p ? cant * precio : 0);
+    if (p) {
+      t += cant * precio;
+      const costo = COSTOMOV[mid] ?? Number(p.precio_compra);             // costo del lote elegido
+      if (precio > 0) {
+        g += cant * (precio - costo);
+        txt += ` · Costo del lote: ${money(costo)} · Ganancia: ${money(cant * (precio - costo))}${costo > 0 ? ` (${pct((precio - costo) / costo * 100)})` : ""}${precio < costo ? " ⚠ por debajo del costo" : ""}`;
+      }
+    }
+    l.querySelector(".subt").textContent = txt;
+  });
+  const debe = Number(document.querySelector('[name="debe"]').value) || 0;
+  document.getElementById("total").textContent = `Total: ${money(t)} · Ganancia: ${money(g)} · Paga ahora: ${money(Math.max(0, t - debe))} · Debe: ${money(debe)}`;
+}
+function hint(f) {
+  const t = Number(f[HINT.total].value), u = Number(f[HINT.unidades].value), el = document.getElementById("hint");
+  if (!(u > 0 && t >= 0)) { el.textContent = ""; return; }
+  const pu = t / u; let s = `${HINT.texto || "Precio unitario de compra"}: ${money(pu)}`;
+  if (HINT.venta) { const pv = Number(f[HINT.venta].value); if (pv > 0) s += ` · Ganancia: ${money(pv - pu)}${pu > 0 ? ` (${pct((pv - pu) / pu * 100)})` : ""}`; }
+  el.textContent = s;
+}
+
+/* Filtros, búsqueda y orden */
+function opcionesFiltro(f) {
+  if (f.fn) return f.fn.map((x, i) => [i, x[0]]);
+  const vals = VIS.filas.map(r => r[f.k]).filter(v => v != null && v !== "");
+  if (f.mes) return [...new Set(vals.map(mesCO))].sort().reverse().map(m => [m, nombreMes(m)]);
+  return [...new Set(vals)].sort((a, b) => String(a).localeCompare(String(b), "es")).map(v => [v, v]);
+}
+function barraHTML() {
+  const {id, m} = VIS, e = E(id);
+  const fil = (m.filtros || []).map((f, i) => `<label>${f.l}<select onchange="setFiltro(${i},this.value)"><option value="">Todos</option>${
+    opcionesFiltro(f).map(o => `<option value="${esc(o[0])}" ${String(e.f[i] ?? "") === String(o[0]) ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select></label>`).join("");
+  return `<div class="bar"><label>Buscar<input value="${esc(e.q)}" oninput="setQ(this.value)" placeholder="Escribe para buscar…"></label>${fil}
+    <label>Ordenar por<select onchange="setOrden(this.value)">${m.orden.map((o, i) => `<option value="${i}" ${e.o === i ? "selected" : ""}>${o[0]}</option>`).join("")}</select></label>
+    <button type="button" class="gris" onclick="limpiar()">Limpiar</button></div>`;
+}
+function visibles() {
+  const {id, m, filas} = VIS, e = E(id), q = e.q.trim().toLowerCase();
+  const r = filas.filter(x => (!q || m.cols.some(c => String(x[c[0]] ?? "").toLowerCase().includes(q))) &&
+    (m.filtros || []).every((f, i) => {
+      const v = e.f[i]; if (v === undefined || v === "") return true;
+      return f.fn ? f.fn[Number(v)][1](x) : f.mes ? mesCO(x[f.k]) === v : String(x[f.k]) === v;
+    }));
+  const [, k, t, dir = 1] = m.orden[e.o];
+  return r.sort((a, b) => {
+    const va = a[k], vb = b[k], na = va == null || va === "", nb = vb == null || vb === "";
+    if (na || nb) return na === nb ? 0 : na ? 1 : -1;
+    const d = t === "n" ? Number(va) - Number(vb) : t === "d" ? (va < vb ? -1 : va > vb ? 1 : 0) : String(va).localeCompare(String(vb), "es", {sensitivity: "base"});
+    return d * dir;
+  });
+}
+function listaHTML() {
+  const {m, filas} = VIS, r = visibles();
+  const acc = x => (m.puede && !m.puede(x)) ? `<span class="subt">Automático</span>` :
+    `<button class="mini" onclick="editar(${x.id})">Editar</button> <button class="mini peligro" onclick="eliminar(${x.id})">Eliminar</button>`;
+  return `<p class="subt">Mostrando ${r.length} de ${filas.length} registros</p>${tablaHTML(m.cols, r, acc)}`;
+}
+function lista2HTML() {
+  const {m, l2} = VIS; if (!m.lista2) return "";
+  const acc = m.lista2.borrar ? x => `<button class="mini peligro" onclick="eliminarDe('${m.lista2.tabla}',${x.id})">Eliminar</button>` : null;
+  return `<div class="box" style="margin-top:16px"><b>${m.lista2.titulo}</b>${tablaHTML(m.lista2.cols, l2, acc)}</div>`;
+}
+const pintarLista = () => { document.getElementById("lista").innerHTML = listaHTML(); };
+const setQ = v => { E(VIS.id).q = v; pintarLista(); };
+const setFiltro = (i, v) => { E(VIS.id).f[i] = v; pintarLista(); };
+const setOrden = v => { E(VIS.id).o = Number(v); pintarLista(); };
+function limpiar() { EST[VIS.id] = {q: "", f: {}, o: 0}; document.getElementById("barra").innerHTML = barraHTML(); pintarLista(); }
+
+/* Guardar, editar, eliminar */
+async function enviar(fn) {
+  try { await fn(); mostrar(); }
+  catch (e) {
+    if (e.message === "AUTH") return mostrar();
+    document.getElementById("aviso").innerHTML = `<div class="msg">${error(e)}</div>`;
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }
+}
+const datosForm = f => { const d = {}; new FormData(f).forEach((v, k) => { d[k] = v === "" ? null : v; }); return d; };
+const guardar = ev => { ev.preventDefault(); const {m, edit} = VIS; return enviar(() => api(m.tabla, edit ? "PUT" : "POST", datosForm(ev.target), edit && edit.id)); };
+const guardarExtra = ev => { ev.preventDefault(); return enviar(() => api(VIS.m.extra.tabla, "POST", datosForm(ev.target))); };
+function guardarVenta(ev) {
+  ev.preventDefault();
+  const f = ev.target;
+  const items = [...f.querySelectorAll(".linea")]
+    .map(l => ({producto_id: l.querySelector(".pid").value, movimiento_id: l.querySelector(".lote").value || null, cantidad: l.querySelector(".cant").value, precio: l.querySelector(".precio").value}))
+    .filter(i => i.producto_id);
+  return enviar(() => api("ventas", "POST", {cliente_id: f.cliente_id.value || null, debe: f.debe.value || 0, items}));
+}
+function editar(rid) { VIS.edit = VIS.filas.find(r => r.id === rid); pintarForm(); window.scrollTo({top: 0, behavior: "smooth"}); }
+function cancelar() { VIS.edit = null; pintarForm(); }
+const eliminar = rid => confirm(`¿Eliminar este registro?\n${VIS.m.aviso || "Esta acción no se puede deshacer."}`) ? enviar(() => api(VIS.m.tabla, "DELETE", null, rid)) : null;
+const eliminarDe = (tabla, rid) => confirm("¿Eliminar este registro?\nSi tenía un ingreso en caja, también se quita.") ? enviar(() => api(tabla, "DELETE", null, rid)) : null;
+
+/* ---------- Acceso y navegación ---------- */
+function login(aviso = "") {
+  document.getElementById("app").innerHTML = encabezado("Iniciar sesión","Escribe la clave de administrador") +
+    `<div class="box login">${aviso}<form class="fila" onsubmit="entrar(event)">
+      <label>Clave<input type="password" name="k" required autofocus></label><button>Entrar</button></form></div>`;
+}
+async function entrar(ev) {
+  ev.preventDefault();
+  sessionStorage.setItem("k", new FormData(ev.target).get("k"));
+  try { await api("categorias"); mostrar(); }
+  catch (e) { login(`<div class="msg">${e.message === "AUTH" ? "La clave no es correcta." : error(e)}</div>`); }
+}
+
+async function mostrar() {
+  const h = location.hash.slice(1);
+  if (h === "salir") { sessionStorage.removeItem("k"); location.hash = "dashboard"; return; }
+  const id = (h in CFG || h in VISTAS) ? h : "dashboard";
+  const orden = ["dashboard","categorias","productos","inventario","vencimientos","ventas","clientes","proveedores","reportes","caja"];
+  const nombre = k => ({dashboard:"Dashboard", reportes:"Reportes", vencimientos:"Por vencer"})[k] || CFG[k].nombre;
+  document.getElementById("menu").innerHTML = orden.map(k => `<a href="#${k}" class="${k === id ? "active" : ""}">${nombre(k)}</a>`).join("") + `<a href="#salir">Salir</a>`;
+  document.title = nombre(id) + " · Mi Tienda";
+  if (!sessionStorage.getItem("k")) return login();
+  const app = document.getElementById("app");
+  app.innerHTML = `<p class="sub">Cargando…</p>`;
+  try { app.innerHTML = id in VISTAS ? await VISTAS[id]() : await vistaLista(id); }
+  catch (e) { if (e.message === "AUTH") return login(`<div class="msg">La clave no es correcta.</div>`); app.innerHTML = `<div class="msg">${error(e)}</div>`; }
+}
+addEventListener("hashchange", mostrar);
+mostrar();
+</script>
+</body>
+</html>
