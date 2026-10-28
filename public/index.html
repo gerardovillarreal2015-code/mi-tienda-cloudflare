@@ -56,6 +56,15 @@ th.acc,td.acc{position:sticky;right:0;background:var(--panel);white-space:nowrap
 .hb{display:grid;grid-template-columns:minmax(90px,150px) 1fr 40px;gap:8px;align-items:center;margin:8px 0;font-size:14px}
 .hbar{background:var(--line);border-radius:6px;height:12px}.hbar i{display:block;height:100%;background:var(--accent);border-radius:6px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.enlace{background:none;color:var(--side);padding:0;font-weight:700;text-decoration:underline;text-align:left}
+button.enlace:hover{background:none;color:var(--accent)}
+.modal-fondo{position:fixed;inset:0;background:rgba(15,25,22,.55);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px;z-index:100;overflow-y:auto}
+.modal{background:var(--panel);border-radius:12px;max-width:900px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.modal-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.modal h3{font-size:22px}
+.modal h4{margin:18px 0 6px;font-size:15px}
+.modal .tabla{overflow-x:auto}
+.modal .venta-det{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
 @media(max-width:760px){body{flex-direction:column}aside{width:100%;height:auto;position:static;padding:12px}
 nav{display:flex;overflow-x:auto;gap:4px}nav a{white-space:nowrap;margin:0}aside h1{padding-bottom:10px}main{padding:18px}}
 </style>
@@ -139,9 +148,9 @@ const CFG = {
     orden:[["Más recientes","fecha","d",-1],["Más antiguas","fecha","d"],["Mayor total","total","n",-1],["Menor total","total","n"],["Mayor ganancia","ganancia","n",-1],["Cliente (A-Z)","cliente","t"]],
     lista2:{tabla:"venta_items",titulo:"Detalle de productos vendidos",
       cols:[["venta_id","Venta N°"],["fecha","Fecha y hora","f"],["cliente","Cliente"],["producto","Producto"],["lote","N° de lote"],["cantidad","Cantidad"],["precio_unitario","Precio unitario","$"],["costo_lote","Costo (lote vendido)","$"],["subtotal","Total","$"],["ganancia_inv","Ganancia","ganinv"]]}},
-  clientes:{nombre:"Clientes",sub:"Tus compradores y lo que te deben",tabla:"clientes",boton:"Agregar cliente",
+  clientes:{nombre:"Clientes",sub:"Tus compradores y lo que te deben. Haz clic en el nombre de un cliente para ver el detalle de su deuda",tabla:"clientes",boton:"Agregar cliente",
     aviso:"Solo se puede eliminar si no tiene ventas ni abonos.",
-    cols:[["id","N°"],["nombre","Nombre"],["telefono","Teléfono"],["correo","Correo"],["deuda","Deuda","$"]],
+    cols:[["id","N°"],["nombre","Nombre","cli"],["telefono","Teléfono"],["correo","Correo"],["deuda","Deuda","$"]],
     campos:[{k:"nombre",l:"Nombre",req:1},{k:"telefono",l:"Teléfono"},{k:"correo",l:"Correo"}],
     filtros:[{l:"Deuda",fn:[["Con deuda",r=>Number(r.deuda)>0],["Sin deuda",r=>Number(r.deuda)<=0]]}],
     orden:[...nombreAZ,["Mayor deuda","deuda","n",-1],["Más recientes","creado","d",-1]],
@@ -162,6 +171,7 @@ const CFG = {
 };
 
 const celda = (v, t, r) => t === "$" ? money(v) : t === "f" ? fecha(v) : t === "d" ? soloFecha(v)
+  : t === "cli" ? `<button class="enlace" title="Ver el detalle de sus deudas" onclick="verCliente(${r.id})">${esc(v)}</button>`
   : t === "gan" || t === "ganinv" ? (() => { const g = t === "gan" ? r.ganancia : r.ganancia_inv, p = t === "gan" ? r.ganancia_pct : r.ganancia_inv_pct;
       return g == null ? "—" : `${money(g)} (${p == null ? "—" : pct(p)})`; })() : esc(v);
 const stat = (n, t, nota) => `<div class="stat"><b>${n}</b><span>${t}</span>${nota ? `<small>${nota}</small>` : ""}</div>`;
@@ -518,6 +528,62 @@ const setQ = v => { E(VIS.id).q = v; pintarLista(); };
 const setFiltro = (i, v) => { E(VIS.id).f[i] = v; pintarLista(); };
 const setOrden = v => { E(VIS.id).o = Number(v); pintarLista(); };
 function limpiar() { EST[VIS.id] = {q: "", f: {}, o: 0}; document.getElementById("barra").innerHTML = barraHTML(); pintarLista(); }
+
+/* ---------- Ventana de detalle del cliente (deudas, productos y abonos) ---------- */
+function abrirModal(html) {
+  cerrarModal();
+  document.body.insertAdjacentHTML("beforeend", `<div id="modal" class="modal-fondo" onmousedown="if(event.target===this)cerrarModal()"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`);
+  document.body.style.overflow = "hidden";
+}
+function cerrarModal() {
+  const d = document.getElementById("modal");
+  if (d && d.remove) d.remove();
+  document.body.style.overflow = "";
+}
+addEventListener("keydown", e => { if (e.key === "Escape") cerrarModal(); });
+
+function detalleClienteHTML(c, ventas, items, abonos) {
+  const cron = (a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0;
+  const vs = ventas.filter(v => String(v.cliente_id) === String(c.id) && Number(v.debe) > 0).sort(cron);
+  const ab = abonos.filter(a => String(a.cliente_id) === String(c.id)).sort(cron);
+  const ids = new Set(vs.map(v => v.id)), porVenta = {};
+  items.filter(i => ids.has(i.venta_id)).forEach(i => (porVenta[i.venta_id] ||= []).push(i));
+  // Lo que debe de cada producto: si la venta se pagó en parte, la deuda se reparte según el valor de cada producto
+  const parte = (i, v) => Number(v.total) > 0 ? Number(i.subtotal) * Number(v.debe) / Number(v.total) : 0;
+  const res = {};
+  vs.forEach(v => (porVenta[v.id] || []).forEach(i => {
+    const r = res[i.producto_id] ||= {producto: i.producto, unidades: 0, debe: 0};
+    r.unidades += Number(i.cantidad); r.debe += parte(i, v);
+  }));
+  const resumen = Object.values(res).sort((a, b) => b.debe - a.debe);
+  const fiado = vs.reduce((a, v) => a + Number(v.debe), 0), abonado = ab.reduce((a, x) => a + Number(x.monto), 0);
+  const tb = (cols, filas) => `<div class="tabla">${tablaHTML(cols, filas)}</div>`;
+  const parcial = vs.some(v => Number(v.debe) < Number(v.total));
+  const ventasHTML = vs.map(v => `<div class="venta-det"><p><b>Venta N° ${v.id}</b> · ${fecha(v.fecha)} · Total ${money(v.total)} · Pagó ${money(Number(v.total) - Number(v.debe))} · <b>Debe ${money(v.debe)}</b></p>${
+    (porVenta[v.id] || []).length ? tb([["producto","Producto"],["lote","N° de lote"],["cantidad","Cantidad"],["precio_unitario","Precio unitario","$"],["subtotal","Total","$"],["parte","Le corresponde de la deuda","$"]],
+      porVenta[v.id].map(i => ({...i, parte: parte(i, v)}))) : `<p class="vacio">Esta venta no tiene el detalle de productos guardado.</p>`}</div>`).join("");
+  return `<div class="modal-cab"><div><h3>${esc(c.nombre)}</h3><p class="subt">${esc([c.telefono, c.correo].filter(Boolean).join(" · ") || "Sin datos de contacto")}</p></div>
+      <button class="gris" onclick="cerrarModal()">Cerrar ✕</button></div>
+    <div class="stats">${stat(money(c.deuda), "Deuda actual")}${stat(money(fiado), "Fiado en ventas")}${stat(money(abonado), "Abonos pagados")}</div>
+    ${vs.length ? `<h4>Productos que debe</h4>${tb([["producto","Producto"],["unidades","Unidades en esas ventas"],["debe","Valor que debe","$"]], resumen)}
+      <p class="total" style="margin:6px 0">Total fiado: ${money(fiado)}</p>
+      ${parcial ? `<p class="subt">En las ventas pagadas en parte, la deuda se reparte en proporción al valor de cada producto. Los abonos se descuentan de la deuda total del cliente, no de una venta en particular.</p>` : ""}
+      <h4>Detalle por venta</h4>${ventasHTML}` : `<p class="vacio">Este cliente no tiene ventas fiadas.</p>`}
+    <h4>Abonos</h4>${ab.length ? `${tb([["fecha","Fecha y hora","f"],["monto","Monto","$"]], ab)}<p class="total" style="margin:6px 0">Total abonado: ${money(abonado)}</p>` : `<p class="vacio">Todavía no hay abonos.</p>`}
+    <div style="margin-top:14px;text-align:right"><button class="gris" onclick="cerrarModal()">Cerrar</button></div>`;
+}
+async function verCliente(id) {
+  const c = VIS.filas.find(x => x.id === id);
+  if (!c) return;
+  abrirModal(`<p class="subt">Cargando…</p>`);
+  try {
+    VIS.det ||= await Promise.all([api("ventas"), api("venta_items")]);
+    abrirModal(detalleClienteHTML(c, VIS.det[0], VIS.det[1], VIS.l2));
+  } catch (e) {
+    if (e.message === "AUTH") { cerrarModal(); return mostrar(); }
+    abrirModal(`<div class="msg">${error(e)}</div><button class="gris" onclick="cerrarModal()">Cerrar</button>`);
+  }
+}
 
 /* Guardar, editar, eliminar */
 async function enviar(fn) {
